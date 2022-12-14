@@ -7,19 +7,24 @@
 
 uint8_t serverAddress[] = SERVER_ADDRESS;
 
-RTC_DATA_ATTR int bootCount = 0;
 esp_now_send_status_t global_status;
 
 #define TIMEOUT_MS 1000
+
+void delay_sleep(uint32_t time_ms) {
+  esp_sleep_enable_timer_wakeup(time_ms * 1000);
+  esp_light_sleep_start();
+  esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
+}
 
 void blink_led(uint16_t interval, uint8_t repetitions) {
   uint8_t i;
   for (i = 0; i < repetitions; i++) {
     digitalWrite(LED, 1);
-    delay(interval);
+    delay_sleep(interval);
     digitalWrite(LED, 0);
     if (repetitions > 1) {
-      delay(interval);
+      delay_sleep(interval);
     }
   }
 }
@@ -79,21 +84,31 @@ void buttonPressed() {
   } else {
     blink_led(30,10);
   }
+
+  //wait for button release
+  esp_sleep_enable_ext0_wakeup((gpio_num_t)BUTTON, HIGH);
+  esp_light_sleep_start();
+  esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_EXT0);
+}
+
+void hibernate() {
+  esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH,   ESP_PD_OPTION_OFF);
+  esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_SLOW_MEM, ESP_PD_OPTION_OFF);
+  esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_FAST_MEM, ESP_PD_OPTION_OFF);
+  esp_sleep_pd_config(ESP_PD_DOMAIN_XTAL,         ESP_PD_OPTION_OFF);
+  esp_deep_sleep_start();
 }
 
 void setup() {
-  pinMode(BUTTON, INPUT_PULLUP);
+  pinMode(BUTTON, INPUT);
   pinMode(LED, OUTPUT);
 
-  gpio_hold_en((gpio_num_t)BUTTON); // Hold the high state during deepsleep.
-
-  if (bootCount != 0) {
+  if (esp_reset_reason() == ESP_RST_DEEPSLEEP) {
     buttonPressed();
   }
-  bootCount++;
-  
-  esp_sleep_enable_ext0_wakeup((gpio_num_t)BUTTON, LOW);
-  esp_deep_sleep_start();
+
+  esp_sleep_enable_ext1_wakeup(1 << BUTTON, ESP_EXT1_WAKEUP_ALL_LOW);
+  hibernate();
 }
 
 void loop() {
